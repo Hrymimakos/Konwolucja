@@ -1,0 +1,198 @@
+#include <iostream>
+#include <fstream>
+#include <stdint.h>
+using namespace std;
+
+
+struct BITMAPFILEHEADER{
+	    uint16_t bfType;
+        uint32_t bfSize;
+        uint16_t bfReserved1;
+        uint16_t bfReserved2;
+        uint32_t bfOffBits;
+};
+
+struct BMPINFOHEADER {
+        uint32_t biSize;
+        uint32_t biWidth;
+        uint32_t biHeight;
+        uint16_t biPlanes;
+        uint16_t biBitCount;
+        uint32_t biCompression;
+        uint32_t biSizeImage;
+        uint32_t biXpelsPerMeter;
+        uint32_t biYpelsPerMeter;
+        uint32_t biCrlUses;
+        uint32_t biCrlImportant;
+};
+
+int odczytajnaglowki(fstream &ifs, BMPINFOHEADER &bih, BITMAPFILEHEADER &bfh);
+void poprawnoscodczytu (fstream &ifs, bool &odczyt);
+void odczytajzdjecie(fstream & ifs, int **niebieski, int **zielony, int **czerwony, unsigned int rozmiar, int szerokosc,int wysokosc, int kursor);
+void zapisz(fstream &ifs, BITMAPFILEHEADER &bfh, BMPINFOHEADER &bih, int **niebieski, int **zielony, int **czerwony);
+void konwolucja(int **niebieski, int **zielony, int **czerwony, int szerokosc, int wysokosc);
+
+int main(int argc, char** argv) {
+	fstream ifs;
+	int kursor;
+	char nazwapliku[60];
+	cout<< "podaj nazwe pliku:"<< endl;
+	cin >> nazwapliku;	
+	bool odczyt = false;
+
+	BITMAPFILEHEADER bfh;
+	BMPINFOHEADER bih;
+	ifs.open(nazwapliku, ios::out | ios::in);
+	poprawnoscodczytu(ifs, odczyt);
+	kursor = odczytajnaglowki(ifs,bih,bfh);
+
+	int **niebieski = new int*[bih.biHeight];
+	int **zielony = new int*[bih.biHeight];
+	int **czerwony = new int*[bih.biHeight];
+	for(int i = 0; i < bih.biHeight; i++){
+		niebieski[i] = new int[bih.biWidth];
+		zielony[i] = new int[bih.biWidth];
+		czerwony[i] = new int[bih.biWidth];
+	}
+
+	odczytajzdjecie(ifs, niebieski, zielony, czerwony, bfh.bfSize, bih.biWidth, bih.biHeight, kursor);
+
+	konwolucja(niebieski, zielony, czerwony, bih.biWidth, bih.biHeight);
+
+	ifs.close();
+
+	// czas na zpaisanie pliku 
+	fstream zdj("c1.bmp", ios::out | ios::binary);
+	poprawnoscodczytu (zdj, odczyt);
+	cout<<1;
+	
+	zapisz(zdj, bfh, bih, niebieski, zielony, czerwony);
+ 	zdj.close();
+ 	cout<<2;
+for(int i = bih.biHeight; i>=0; i--)
+{
+	delete niebieski[i];
+	delete zielony[i];
+	delete czerwony[i];
+}
+
+	return 0;
+}
+void poprawnoscodczytu (fstream &ifs, bool &odczyt){
+	if (!ifs){
+		cout << "Plik nie zostal otwarty.";
+		odczyt = true;
+	}
+}
+// odczytuje nagłówki
+int odczytajnaglowki(fstream &ifs, BMPINFOHEADER  &bih, BITMAPFILEHEADER &bfh){
+	ifs.read(reinterpret_cast<char *>(& bfh.bfType), 2);
+	ifs.read(reinterpret_cast<char *>(& bfh.bfSize), 4);
+	ifs.read(reinterpret_cast<char *>(& bfh.bfReserved1), 2);
+	ifs.read(reinterpret_cast<char *>(& bfh.bfReserved2), 2);
+	ifs.read(reinterpret_cast<char *>(& bfh.bfOffBits), 4);
+
+	ifs.read(reinterpret_cast<char *>(& bih.biSize), 4);
+	ifs.read(reinterpret_cast<char *>(& bih.biWidth), 4);
+	ifs.read(reinterpret_cast<char *>(& bih.biHeight), 4);
+	ifs.read(reinterpret_cast<char *>(& bih.biPlanes), 2);
+	ifs.read(reinterpret_cast<char *>(& bih.biBitCount), 2);
+	ifs.read(reinterpret_cast<char *>(& bih.biCompression), 4);
+	ifs.read(reinterpret_cast<char *>(& bih.biSizeImage), 4);
+	ifs.read(reinterpret_cast<char *>(& bih.biXpelsPerMeter), 4);
+	ifs.read(reinterpret_cast<char *>(& bih.biYpelsPerMeter), 4);
+	ifs.read(reinterpret_cast<char *>(& bih.biCrlUses), 4);
+	ifs.read(reinterpret_cast<char *>(& bih.biCrlImportant), 4);
+	return ifs.tellg();
+}
+// odczytuje macierz rgb
+void odczytajzdjecie(fstream & ifs, int **niebieski, int **zielony, int **czerwony, unsigned int rozmiar, int szerokosc, int wysokosc, int kursor){
+	ifs.seekg(kursor, ios::beg);
+	unsigned char *obraz = new unsigned char[rozmiar];
+	ifs.read(reinterpret_cast<char*>(obraz), rozmiar);
+
+	int zerowe_bajty = rozmiar/wysokosc - 3*szerokosc;
+	int k = 0;
+	for (int i = 0; i < wysokosc; i++){
+		for (int j = 0; j < szerokosc; j++){
+			niebieski[i][j] = obraz[k++];
+			zielony[i][j] = obraz[k++];
+			czerwony[i][j] = obraz[k++];
+		}
+		k += zerowe_bajty;
+	}
+}
+// zapisuje bmp
+void zapisz(fstream &ifs, BITMAPFILEHEADER &bfh, BMPINFOHEADER &bih, int **niebieski, int **zielony, int **czerwony){
+    ifs.write(reinterpret_cast<char *>(& bfh.bfType), 2);
+    ifs.write(reinterpret_cast<char *>(& bfh.bfSize), 4);
+    ifs.write(reinterpret_cast<char *>(& bfh.bfReserved1), 2);
+    ifs.write(reinterpret_cast<char *>(& bfh.bfReserved2), 2);
+    ifs.write(reinterpret_cast<char *>(& bfh.bfOffBits), 4);
+ 
+ 
+    ifs.write(reinterpret_cast<char *>(& bih.biSize), 4);
+    ifs.write(reinterpret_cast<char *>(& bih.biWidth), 4);
+    ifs.write(reinterpret_cast<char *>(& bih.biHeight), 4);
+    ifs.write(reinterpret_cast<char *>(& bih.biPlanes), 2);
+    ifs.write(reinterpret_cast<char *>(& bih.biBitCount), 2);
+    ifs.write(reinterpret_cast<char *>(& bih.biCompression), 4);
+    ifs.write(reinterpret_cast<char *>(& bih.biSizeImage), 4);
+    ifs.write(reinterpret_cast<char *>(& bih.biXpelsPerMeter), 4);
+    ifs.write(reinterpret_cast<char *>(& bih.biYpelsPerMeter), 4);
+    ifs.write(reinterpret_cast<char *>(& bih.biCrlUses), 4);
+    ifs.write(reinterpret_cast<char *>(& bih.biCrlImportant), 4);
+  
+	char *obraz = new char[bfh.bfSize];
+  
+	int zerowe_bajty = bfh.bfSize/bih.biHeight - 3*bih.biWidth;
+    int k=0;
+ 
+    for (int i = 0; i < bih.biHeight; i++){
+        for (int j = 0; j < bih.biWidth; j++){
+            obraz[k++] = niebieski[i][j];
+            obraz[k++] = zielony[i][j];
+            obraz[k++] = czerwony[i][j];
+        }
+        k += zerowe_bajty;
+    }
+    ifs.write(obraz,bfh.bfSize);
+
+}
+
+ 
+void konwolucja(int **niebieski, int **zielony, int **czerwony, int szerokosc, int wysokosc){
+	int sumn=0;
+int sumg=0;
+int sumr=0;
+int min=0;
+int max=255;
+
+	    for (int i = 1; i < wysokosc-1; i++)
+		{
+     	   for (int j = 1; j < szerokosc-1; j++)
+			{
+
+				sumn=  (5*niebieski[i][j] - niebieski[i-1][j] - niebieski[i][j-1] - niebieski[i+1][j] - niebieski[i][j+1])*(255)/(max-min);
+				sumg= (5*zielony[i][j] - zielony[i-1][j] - zielony[i][j-1] - zielony[i+1][j] - zielony[i][j+1])*(255)/(max-min);
+				sumr= (5*czerwony[i][j] - czerwony[i-1][j] - czerwony[i][j-1] - czerwony[i+1][j] - czerwony[i][j+1])*(255)/(max-min);
+		if (sumn>255) sumn=255;
+		if (sumg>255) sumg=255;
+		if (sumr>255) sumr=255; 
+	 	if (sumn<0) sumn=0;
+		if (sumg<0) sumg=0;
+		if (sumr<0) sumr=0;
+				niebieski[i][j]=sumn;
+				zielony[i][j]=sumg;
+				czerwony[i][j]=sumr;
+			sumn=0;
+			sumg=0; 
+			sumr=0;
+			}		
+		}
+		
+}
+
+ 
+
+ 
